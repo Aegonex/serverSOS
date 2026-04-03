@@ -1,36 +1,45 @@
 import express from "express";
-import dotenv from "dotenv";
 import fetch from "node-fetch";
-dotenv.config({ path: "../.env" });
+import dotenv from "dotenv";
+dotenv.config();
+import morgan from "morgan";
+import path from "path";
+import { fileURLToPath } from "url";
+
+import AuthActivity from './routes/auth.js'
+import RollRoutes from './routes/rolls.js'
+import AdminRoutes from './routes/admin.js'
 
 const app = express();
-const port = 3001;
+const port = process.env.PORT || 3001;
+const clientDistDir = fileURLToPath(new URL("../client-react/dist", import.meta.url));
+const clientIndexFile = path.join(clientDistDir, "index.html");
+const adminDistDir = fileURLToPath(new URL("../admin-panel/dist", import.meta.url));
+const adminIndexFile = path.join(adminDistDir, "index.html");
 
 // Allow express to parse JSON bodies
 app.use(express.json());
+app.use(morgan('dev'))
 
-app.post("/api/token", async (req, res) => {
-  
-  // Exchange the code for an access_token
-  const response = await fetch(`https://discord.com/api/oauth2/token`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/x-www-form-urlencoded",
-    },
-    body: new URLSearchParams({
-      client_id: process.env.VITE_DISCORD_CLIENT_ID,
-      client_secret: process.env.DISCORD_CLIENT_SECRET,
-      grant_type: "authorization_code",
-      code: req.body.code,
-    }),
-  });
+app.use("/", AuthActivity)
+app.use("/", RollRoutes)
+app.use("/", AdminRoutes)
 
-  // Retrieve the access_token from the response
-  const { access_token } = await response.json();
+app.get("/admin", (_req, res) => {
+  res.sendFile(adminIndexFile)
+})
 
-  // Return the access_token to our client as { access_token: "..."}
-  res.send({access_token});
-});
+app.use("/admin", express.static(adminDistDir))
+
+app.get(/^\/admin\/(?!assets\/|favicon\.svg$|icons\.svg$).*/, (_req, res) => {
+  res.sendFile(adminIndexFile)
+})
+
+app.use(express.static(clientDistDir))
+
+app.get(/^\/(?!api(?:\/|$)|admin(?:\/|$)).*/, (_req, res) => {
+  res.sendFile(clientIndexFile)
+})
 
 app.listen(port, () => {
   console.log(`Server listening at http://localhost:${port}`);
