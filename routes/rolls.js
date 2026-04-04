@@ -62,7 +62,7 @@ router.get('/api/rolls/history', async (req, res) => {
       return res.status(400).json({ error: 'discordUserId is required' })
     }
 
-    const history = await getRollHistory(discordUserId, limit ?? 100)
+    const history = await getRollHistory(discordUserId, Math.min(Number(limit) || 1000, 1000))
     res.json(history)
   } catch (err) {
     console.error(err)

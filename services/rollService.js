@@ -48,7 +48,7 @@ export async function getBalance(discordUserId) {
   return rows[0].balance
 }
 
-export async function getRollHistory(discordUserId, limit = 100) {
+export async function getRollHistory(discordUserId, limit = 1000) {
   const [rows] = await db.query(
     `SELECT
         ur.id,
