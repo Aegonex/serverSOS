@@ -314,4 +314,68 @@ router.put('/api/admin/settings', async (req, res) => {
   }
 })
 
+// === PAYMENTS ===
+
+// ดึง payment sessions ทั้งหมด
+router.get('/api/admin/payments', async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      `SELECT ps.id, ps.user_id, ps.amount, ps.status, ps.created_at, ps.updated_at,
+              u.username
+       FROM payment_sessions ps
+       LEFT JOIN User u ON ps.user_id = u.discordUserId
+       ORDER BY ps.created_at DESC
+       LIMIT 500`
+    )
+    res.json(rows)
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// ดึงสรุปข้อมูล dashboard
+router.get('/api/admin/dashboard', async (req, res) => {
+  try {
+    const [[userCount]] = await db.query('SELECT COUNT(*) as count FROM User')
+    const [[todayRolls]] = await db.query(
+      'SELECT COUNT(*) as count FROM UserRoll WHERE DATE(rolledAt) = CURDATE()'
+    )
+    const [[totalTopUp]] = await db.query(
+      "SELECT COALESCE(SUM(amount), 0) as total FROM payment_sessions WHERE status = 'success'"
+    )
+    const [[pendingPayments]] = await db.query(
+      "SELECT COUNT(*) as count FROM payment_sessions WHERE status = 'pending'"
+    )
+
+    res.json({
+      userCount: userCount.count,
+      todayRolls: todayRolls.count,
+      totalTopUp: Math.floor(totalTopUp.total / 100), // สตางค์ → บาท
+      pendingPayments: pendingPayments.count,
+    })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// ตั้งค่า balance ตรงๆ
+router.put('/api/admin/balance', async (req, res) => {
+  try {
+    const { discordUserId, balance } = req.body
+    if (!discordUserId || balance == null) {
+      return res.status(400).json({ error: 'discordUserId and balance are required' })
+    }
+    await db.query(
+      'UPDATE User SET balance = ? WHERE discordUserId = ?',
+      [Number(balance), discordUserId]
+    )
+    res.json({ discordUserId, balance: Number(balance) })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
 export default router
