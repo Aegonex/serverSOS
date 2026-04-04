@@ -323,7 +323,7 @@ router.get('/api/admin/payments', async (req, res) => {
       `SELECT ps.id, ps.user_id, ps.amount, ps.status, ps.created_at, ps.updated_at,
               u.username
        FROM payment_sessions ps
-       LEFT JOIN User u ON ps.user_id = u.discordUserId
+       LEFT JOIN User u ON ps.user_id = u.discordUserId COLLATE utf8mb4_0900_ai_ci
        ORDER BY ps.created_at DESC
        LIMIT 500`
     )
