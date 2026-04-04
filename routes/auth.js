@@ -1,8 +1,9 @@
 import express from "express";
+import fetch from "node-fetch";
+
 const router = express.Router();
 
 router.post("/api/token", async (req, res) => {
-  // Exchange the code for an access_token
   const response = await fetch(`https://discord.com/api/oauth2/token`, {
     method: "POST",
     headers: {
@@ -16,14 +17,9 @@ router.post("/api/token", async (req, res) => {
     }),
   });
 
-  // Retrieve the access_token from the response
   const { access_token } = await response.json();
 
-  // Return the access_token to our client as { access_token: "..."}
   res.send({ access_token });
 });
 
-export default router
-
-
-
+export default router;

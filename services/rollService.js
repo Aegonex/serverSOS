@@ -3,21 +3,39 @@ import { assignRole } from './discordService.js'
 
 const ROLL_COST = 10 // ราคาสุ่มแบบ paid (บาท)
 
-// เช็คว่า user สุ่มฟรีได้ไหมวันนี้
+const FALLBACK_QUOTA = 2 // ค่า fallback ถ้าอ่าน DB ไม่ได้
+
+async function getDefaultQuota() {
+  try {
+    const [rows] = await db.query("SELECT value FROM Settings WHERE `key` = 'DEFAULT_DAILY_QUOTA'")
+    return rows.length > 0 ? Number(rows[0].value) : FALLBACK_QUOTA
+  } catch {
+    return FALLBACK_QUOTA
+  }
+}
+
+// เช็คว่า user สุ่มฟรีได้อีกกี่ครั้งวันนี้
 export async function checkFreeRoll(discordUserId) {
+  const defaultQuota = await getDefaultQuota()
+
   const [rows] = await db.query(
-    'SELECT lastFreeRollDate FROM User WHERE discordUserId = ?',
+    'SELECT lastFreeRollDate, freeRollQuota, freeRollsUsedToday FROM User WHERE discordUserId = ?',
     [discordUserId]
   )
 
   // user ใหม่ยังไม่มีในระบบ = สุ่มได้
-  if (rows.length === 0 || !rows[0].lastFreeRollDate) return true
+  if (rows.length === 0) return { canRoll: true, remaining: defaultQuota, total: defaultQuota }
 
-  // เทียบวันที่ (reset แบบ global ตามวัน ไม่นับชั่วโมง)
+  const user = rows[0]
+  const quota = user.freeRollQuota || defaultQuota
+
+  // เช็คว่าวันใหม่หรือยัง ถ้าวันใหม่ reset usedToday
   const today = new Date().toDateString()
-  const lastRoll = new Date(rows[0].lastFreeRollDate).toDateString()
+  const lastRoll = user.lastFreeRollDate ? new Date(user.lastFreeRollDate).toDateString() : null
+  const usedToday = (lastRoll === today) ? (user.freeRollsUsedToday || 0) : 0
 
-  return today !== lastRoll
+  const remaining = Math.max(0, quota - usedToday)
+  return { canRoll: remaining > 0, remaining, total: quota }
 }
 
 // เช็คยอดเงินของ user
@@ -30,7 +48,7 @@ export async function getBalance(discordUserId) {
   return rows[0].balance
 }
 
-export async function getRollHistory(discordUserId, limit = 5) {
+export async function getRollHistory(discordUserId, limit = 100) {
   const [rows] = await db.query(
     `SELECT
         ur.id,
@@ -126,15 +144,27 @@ export async function performRoll(discordUserId, rollType = 'free', username = '
   try {
     await conn.beginTransaction()
 
-    // สร้าง user ถ้ายังไม่มี หรืออัพเดท lastFreeRollDate + username
+    // สร้าง user ถ้ายังไม่มี
     await conn.query(
-      `INSERT INTO User (discordUserId, username, lastFreeRollDate, createdAt)
+      `INSERT INTO User (discordUserId, username, freeRollQuota, createdAt)
        VALUES (?, ?, ?, NOW())
        ON DUPLICATE KEY UPDATE
-         username = IF(? != '', ?, username),
-         lastFreeRollDate = IF(? = 'free', VALUES(lastFreeRollDate), lastFreeRollDate)`,
-      [discordUserId, username, rollType === 'free' ? new Date() : null, username, username, rollType]
+         username = IF(? != '', ?, username)`,
+      [discordUserId, username, await getDefaultQuota(), username, username]
     )
+
+    // อัพเดท free roll tracking
+    if (rollType === 'free') {
+      const now = new Date()
+      // เช็คว่าวันใหม่ไหม ถ้าวันใหม่ reset freeRollsUsedToday = 1 ถ้าวันเดิม +1
+      await conn.query(
+        `UPDATE User SET
+           freeRollsUsedToday = IF(DATE(lastFreeRollDate) = CURDATE(), freeRollsUsedToday + 1, 1),
+           lastFreeRollDate = ?
+         WHERE discordUserId = ?`,
+        [now, discordUserId]
+      )
+    }
 
     // หักเงินถ้าเป็น paid
     if (rollType === 'paid') {

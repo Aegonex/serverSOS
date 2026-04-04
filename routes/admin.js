@@ -202,7 +202,7 @@ router.delete('/api/admin/roles/:id', async (req, res) => {
 router.get('/api/admin/users', async (req, res) => {
   try {
     const [users] = await db.query(
-      'SELECT discordUserId, username, balance, lastFreeRollDate, createdAt FROM User ORDER BY createdAt DESC'
+      'SELECT discordUserId, username, balance, freeRollQuota, freeRollsUsedToday, lastFreeRollDate, createdAt FROM User ORDER BY createdAt DESC'
     )
     res.json(users)
   } catch (err) {
@@ -231,6 +231,83 @@ router.post('/api/admin/balance', async (req, res) => {
       [discordUserId]
     )
     res.json({ discordUserId, balance: rows[0].balance })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// === QUOTA ===
+
+// เพิ่มโควต้าสุ่มฟรีให้ user
+router.post('/api/admin/quota', async (req, res) => {
+  try {
+    const { discordUserId, amount } = req.body
+    if (!discordUserId || !amount) {
+      return res.status(400).json({ error: 'discordUserId and amount are required' })
+    }
+    await db.query(
+      'UPDATE User SET freeRollQuota = freeRollQuota + ? WHERE discordUserId = ?',
+      [Number(amount), discordUserId]
+    )
+    const [rows] = await db.query(
+      'SELECT freeRollQuota FROM User WHERE discordUserId = ?',
+      [discordUserId]
+    )
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'User not found' })
+    }
+    res.json({ discordUserId, freeRollQuota: rows[0].freeRollQuota })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// ตั้งโควต้าสุ่มฟรีตรงๆ
+router.put('/api/admin/quota', async (req, res) => {
+  try {
+    const { discordUserId, quota } = req.body
+    if (!discordUserId || quota == null) {
+      return res.status(400).json({ error: 'discordUserId and quota are required' })
+    }
+    await db.query(
+      'UPDATE User SET freeRollQuota = ? WHERE discordUserId = ?',
+      [Number(quota), discordUserId]
+    )
+    res.json({ discordUserId, freeRollQuota: Number(quota) })
+  } catch (err) {
+    console.error(err)
+    res.status(500).json({ error: 'Internal server error' })
+  }
+})
+
+// ดึงค่า default quota
+router.get('/api/admin/settings', async (req, res) => {
+  try {
+    const [rows] = await db.query(
+      "SELECT value FROM Settings WHERE `key` = 'DEFAULT_DAILY_QUOTA'"
+    )
+    const quota = rows.length > 0 ? Number(rows[0].value) : 2
+    res.json({ defaultDailyQuota: quota })
+  } catch (err) {
+    // ถ้าตาราง Settings ยังไม่มี ส่งค่าเริ่มต้น
+    res.json({ defaultDailyQuota: 2 })
+  }
+})
+
+// ตั้งค่า default quota
+router.put('/api/admin/settings', async (req, res) => {
+  try {
+    const { defaultDailyQuota } = req.body
+    if (defaultDailyQuota == null) {
+      return res.status(400).json({ error: 'defaultDailyQuota is required' })
+    }
+    await db.query(
+      "INSERT INTO Settings (`key`, value) VALUES ('DEFAULT_DAILY_QUOTA', ?) ON DUPLICATE KEY UPDATE value = ?",
+      [String(defaultDailyQuota), String(defaultDailyQuota)]
+    )
+    res.json({ defaultDailyQuota: Number(defaultDailyQuota) })
   } catch (err) {
     console.error(err)
     res.status(500).json({ error: 'Internal server error' })

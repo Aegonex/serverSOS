@@ -18,8 +18,8 @@ router.get('/api/rolls/available', async (req, res) => {
       return res.status(400).json({ error: 'discordUserId is required' })
     }
 
-    const canRoll = await checkFreeRoll(discordUserId)
-    res.json({ canRoll })
+    const { canRoll, remaining, total } = await checkFreeRoll(discordUserId)
+    res.json({ canRoll, remaining, total })
   } catch (err) {
     console.error(err)
     res.status(500).json({ error: 'Internal server error' })
@@ -37,7 +37,7 @@ router.post('/api/rolls', async (req, res) => {
 
     // ถ้าเป็น free ต้องเช็คโควต้าก่อน
     if (rollType === 'free') {
-      const canRoll = await checkFreeRoll(discordUserId)
+      const { canRoll } = await checkFreeRoll(discordUserId)
       if (!canRoll) {
         return res.status(403).json({ error: 'Already used free roll today' })
       }
@@ -62,7 +62,7 @@ router.get('/api/rolls/history', async (req, res) => {
       return res.status(400).json({ error: 'discordUserId is required' })
     }
 
-    const history = await getRollHistory(discordUserId, limit ?? 5)
+    const history = await getRollHistory(discordUserId, limit ?? 100)
     res.json(history)
   } catch (err) {
     console.error(err)
