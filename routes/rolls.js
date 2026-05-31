@@ -2,6 +2,7 @@ import express from 'express'
 import {
   checkFreeRoll,
   performRoll,
+  performBulkRoll,
   getAllActiveRoles,
   getBalance,
   getRollHistory,
@@ -29,10 +30,18 @@ router.get('/api/rolls/available', async (req, res) => {
 // กดสุ่มยศ
 router.post('/api/rolls', async (req, res) => {
   try {
-    const { discordUserId, username, rollType = 'free', guildId } = req.body
+    const { discordUserId, username, rollType = 'free', guildId, count } = req.body
 
     if (!discordUserId) {
       return res.status(400).json({ error: 'discordUserId is required' })
+    }
+
+    const rollCount = Number(count) || 1
+
+    // สุ่มหลายครั้ง (paid bulk) — แยก path ออกจากการสุ่มเดี่ยว
+    if (rollCount > 1) {
+      const results = await performBulkRoll(discordUserId, rollCount, username, guildId)
+      return res.json({ results })
     }
 
     // ถ้าเป็น free ต้องเช็คโควต้าก่อน
@@ -48,6 +57,9 @@ router.post('/api/rolls', async (req, res) => {
   } catch (err) {
     if (err.message === 'Insufficient balance') {
       return res.status(403).json({ error: 'Insufficient balance' })
+    }
+    if (err.message === 'Roll count exceeds maximum' || err.message === 'Invalid roll count') {
+      return res.status(400).json({ error: err.message })
     }
     console.error(err)
     res.status(500).json({ error: 'Internal server error' })
